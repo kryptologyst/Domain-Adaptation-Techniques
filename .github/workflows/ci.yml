@@ -1,0 +1,98 @@
+"""GitHub Actions workflow for CI/CD."""
+
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[dev]"
+    
+    - name: Run black
+      run: black --check src/ tests/
+    
+    - name: Run ruff
+      run: ruff check src/ tests/
+    
+    - name: Run mypy
+      run: mypy src/
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.10', '3.11']
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[dev]"
+    
+    - name: Run tests
+      run: |
+        pytest tests/ --cov=src --cov-report=xml --cov-report=html
+    
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+        flags: unittests
+        name: codecov-umbrella
+
+  smoke-test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e .
+    
+    - name: Run smoke test
+      run: |
+        python -c "
+        from domain_adaptation.models import SourceOnlyModel
+        from domain_adaptation.data import create_synthetic_domain_data
+        import torch
+        
+        # Create synthetic data
+        source_data, source_targets, target_data, target_targets = create_synthetic_domain_data(num_samples=100)
+        
+        # Create and test model
+        model = SourceOnlyModel()
+        x = torch.randn(2, 1, 28, 28)
+        output = model(x)
+        
+        print('Smoke test passed!')
+        print(f'Model output shape: {output.shape}')
+        "
